@@ -1,0 +1,46 @@
+# Repository-level gitignore for BOLT
+
+# Python virtual environments
+/backend/LH/
+/backend/hand/
+venv/
+env/
+/.venv/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Logs and runtime files
+/backend/logs/
+*.log
+*.pid
+
+# Ignore image/frame output
+**/frame.jpg
+
+# dotenv
+.env
+.env.*
+
+# Node
+/frontend/my-app/node_modules/
+node_modules/
+
+# IDEs and editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,13 @@
+{
+  "session_date": "2025-09-13T21:55:52.084222",
+  "words_collected": [],
+  "successful_takes": 0,
+  "failed_takes": 0,
+  "total_takes": 0,
+  "collection_settings": {
+    "frames_per_word": 22,
+    "movement_threshold": 1200,
+    "quality_threshold": 0.7,
+    "min_recording_interval": 2.0
+  }
+}
