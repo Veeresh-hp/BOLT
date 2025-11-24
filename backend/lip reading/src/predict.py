@@ -17,12 +17,20 @@ STOP_FILE = os.path.join(PARENT_DIR, "stop.txt")
 TRANSLATE_DEST = 'kn'
 translator = GoogleTranslator(source='auto', target=TRANSLATE_DEST)
 
+# Clear any old stop signal so we don't exit immediately on startup
+if os.path.exists(STOP_FILE):
+    try:
+        os.remove(STOP_FILE)
+        print(f"[INFO] Cleared old stop file at startup: {STOP_FILE}")
+    except Exception as e:
+        print(f"[WARN] Could not remove old stop file {STOP_FILE}: {e}")
+
 if not os.path.exists(MODEL_PATH):
     print(f"Error: Model file {MODEL_PATH} not found.")
     exit(1)
 
 model = tf.keras.models.load_model(MODEL_PATH)
-print(f"\n✅ Loaded model from {MODEL_PATH}")
+print(f"\n Loaded model from {MODEL_PATH}")
 
 if not os.path.exists(PROCESSED_DATA_DIR):
     print(f"Error: Processed data dir {PROCESSED_DATA_DIR} not found.")
@@ -42,14 +50,32 @@ predictor_path = os.path.join(THIS_DIR, "..", "model", "shape_predictor_68_face_
 predictor = dlib.shape_predictor(predictor_path)
 
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+try:
+    os.makedirs(PARENT_DIR, exist_ok=True)
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+        f.write("No output")
+except Exception:
+    pass
 
-FRAME_COUNT = 22
-MOVEMENT_THRESHOLD = 1500
+FRAME_COUNT = 16
+MOVEMENT_THRESHOLD = 600
 
-cap = cv2.VideoCapture(0)
-if not cap.isOpened():
+def _open_cam():
+    backends = [cv2.CAP_DSHOW, cv2.CAP_ANY]
+    for idx in [0, 1, 2]:
+        for be in backends:
+            cap = cv2.VideoCapture(idx, be)
+            if cap.isOpened():
+                print(f"[INFO] Opened webcam index {idx} (backend {be})")
+                return cap
+            try:
+                cap.release()
+            except Exception:
+                pass
     print("Error: Could not open webcam.")
     exit(1)
+
+cap = _open_cam()
 
 # track frames for prediction
 frames = []
@@ -62,15 +88,35 @@ last_text = ""
 
 frame_file = os.path.join(PARENT_DIR, "frame.jpg")
 
+idle_counter = 0
+start_time = time.time()
 while True:
     # check stop signal
     if os.path.exists(STOP_FILE):
-        print("[INFO] Stop file found - exiting lip reading loop.")
-        break
+        try:
+            st = os.path.getmtime(STOP_FILE)
+        except Exception:
+            st = start_time
+        # If stop.txt is older than this process start, treat it as stale and remove
+        if st <= start_time + 0.5:
+            try:
+                os.remove(STOP_FILE)
+                # continue running
+            except Exception:
+                pass
+        else:
+            print("[INFO] Stop file found - exiting lip reading loop.")
+            break
 
     ret, frame = cap.read()
-    if not ret:
-        time.sleep(0.1)
+    if not ret or frame is None:
+        # attempt to reopen camera if it starts failing
+        try:
+            cap.release()
+        except Exception:
+            pass
+        time.sleep(0.2)
+        cap = _open_cam()
         continue
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -136,6 +182,13 @@ while True:
         if lip_moving and not recording:
             recording = True
             frames = []
+            idle_counter = 0
+        if not recording and not lip_moving:
+            idle_counter += 1
+        if not recording and idle_counter >= 10:
+            recording = True
+            frames = []
+            idle_counter = 0
         if recording:
             frames.append(normalized)
 
@@ -189,14 +242,17 @@ while True:
         except Exception:
             pass
 
-    # write a preview frame for the frontend (atomic)
+    # write a preview frame for the frontend (atomic, robust)
     try:
         tmp = frame_file + ".tmp"
-        cv2.imwrite(tmp, frame)
-        try:
-            os.replace(tmp, frame_file)
-        except Exception:
-            os.rename(tmp, frame_file)
+        ok, buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+        if ok:
+            with open(tmp, 'wb') as _f:
+                _f.write(buf.tobytes())
+            try:
+                os.replace(tmp, frame_file)
+            except Exception:
+                os.rename(tmp, frame_file)
     except Exception:
         pass
 

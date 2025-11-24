@@ -63,11 +63,11 @@ const LipReadingApp = () => {
   const [savedGestures, setSavedGestures] = useState([]);
   // Track all detected gesture texts
   const [gestureHistory, setGestureHistory] = useState([]);
-  // Ensure gestureHistory always reflects the full gestureText as shown on the gesture page
+  // update gesture history when a new gestureText/confidence arrives
   useEffect(() => {
     if (gestureText) {
       setGestureHistory(prev => {
-        // Remove all previous entries for this gestureText
+        // Remove previous entries for this gestureText (avoid duplicates)
         const filtered = prev.filter(item => item.text !== gestureText);
         // Add the latest entry at the top
         return [
@@ -75,13 +75,13 @@ const LipReadingApp = () => {
             id: Date.now() + Math.random(),
             text: gestureText,
             timestamp: new Date().toLocaleString(),
-            confidence: gestureConfidence.toFixed(1),
+            confidence: gestureConfidence != null ? gestureConfidence.toFixed(1) : null,
           },
           ...filtered
         ];
       });
     }
-  }, [gestureText, gestureConfidence, gestureHistory]);
+  }, [gestureText, gestureConfidence]);
 
   // Audio/TTS state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -204,35 +204,47 @@ const LipReadingApp = () => {
     'Number 3': 'Three/Third',
   };
 
-  const startLive = () => {
+  const startLive = async () => {
+    // Mirror gesture detection: start backend lip-reading subprocess and stream server video
     if (isLive || processingIntervalRef.current) return;
     setIsLive(true);
     setTranscribedText('');
-    processingIntervalRef.current = setInterval(() => {
+    try {
+      // health check to ensure backend is running
+      const health = await fetch('http://127.0.0.1:5000/');
+      if (!health.ok) {
+        throw new Error('Backend server is not running. Please start Flask backend on port 5000.');
+      }
+      console.log('Backend health check passed');
       setIsProcessing(true);
-      setTimeout(() => {
-        const randomText = sampleTexts[Math.floor(Math.random() * sampleTexts.length)];
-        const prev = transcribedTextRef.current;
-        const newText = prev ? `${prev} ${randomText}` : randomText;
-        setTranscribedText(newText);
-        const logText = LOG_HISTORY_DELTAS ? randomText : newText;
-        // Add to history only if different from latest snapshot to avoid duplicates
-        setAllHistory((h) => {
-          if (HISTORY_DEDUPE && h.length > 0 && h[0].text === logText) return h;
-          const historyItem = {
-            id: Date.now() + Math.random(),
-            text: logText,
-            timestamp: new Date().toLocaleString(),
-            confidence: (90 + Math.random() * 8).toFixed(1),
-            isSaved: false,
-            type: 'lip-reading', // Flag to identify lip reading history
-          };
-          return [historyItem, ...h];
-        });
-        setIsProcessing(false);
-        setConfidence(90 + Math.random() * 8);
-      }, 1500 + Math.random() * 1000);
-    }, 3000 + Math.random() * 2000);
+      // release local camera so backend can open it
+      stopCamera();
+      const res = await fetch('http://127.0.0.1:5000/start_lip_reading');
+      const data = await res.json();
+      console.log('LipReading start response:', data);
+      setUseServerVideo(true);
+
+      // Poll backend for latest recognized text
+      processingIntervalRef.current = setInterval(async () => {
+        try {
+          const r = await fetch('http://127.0.0.1:5000/latest_result');
+          const j = await r.json();
+          if (j.type === 'lip-reading' && j.text) {
+            // j.text expected like: "Predicted: WORD\nTranslated: ..."
+            console.log('Received lip reading text:', j.text);
+            setTranscribedText(j.text);
+          }
+        } catch (e) {
+          console.error('Polling latest_result failed:', e);
+        }
+      }, 1200);
+    } catch (err) {
+      console.error('Failed to start backend lip reading:', err);
+      showToast(err.message || 'Failed to start lip reading. Check if backend is running on port 5000.', 'error');
+      setIsLive(false);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const stopLive = () => {
@@ -242,6 +254,14 @@ const LipReadingApp = () => {
       clearInterval(processingIntervalRef.current);
       processingIntervalRef.current = null;
     }
+    // Ask backend to stop lip reading and restore local camera state
+    try {
+      fetch('http://127.0.0.1:5000/stop_lip_reading');
+    } catch (e) {
+      console.error('Failed to send stop to backend:', e);
+    }
+    setUseServerVideo(false);
+    // local camera remains stopped until user explicitly starts it
   };
 
   // Hand gesture detection functions
@@ -250,6 +270,12 @@ const LipReadingApp = () => {
     if (isHandGestureLive || processingIntervalRef.current) return;
     try {
       setIsHandGestureProcessing(true);
+      // health check to ensure backend is running
+      const health = await fetch('http://127.0.0.1:5000/');
+      if (!health.ok) {
+        throw new Error('Backend server is not running. Please start Flask backend on port 5000.');
+      }
+      console.log('Backend health check passed');
       // make sure browser releases the camera so backend can use it
       stopCamera();
       const res = await fetch('http://127.0.0.1:5000/start_hand_gestures');
@@ -266,6 +292,7 @@ const LipReadingApp = () => {
           const r = await fetch('http://127.0.0.1:5000/latest_result');
           const j = await r.json();
           if (j.type === 'hand-gesture' && j.text) {
+            console.log('Received gesture text:', j.text);
             setGestureText(j.text);
           }
         } catch (e) {
@@ -274,7 +301,8 @@ const LipReadingApp = () => {
       }, 1200);
     } catch (err) {
       console.error('Failed to start backend hand gestures:', err);
-      showToast('Failed to start backend hand gestures', 'error');
+      showToast(err.message || 'Failed to start hand gestures. Check if backend is running on port 5000.', 'error');
+      setIsHandGestureLive(false);
     } finally {
       setIsHandGestureProcessing(false);
     }
@@ -316,17 +344,29 @@ const LipReadingApp = () => {
       isSaved: true,
     };
     setSavedGestures((prev) => [newSaved, ...prev]);
+    // also record in unified history list
+    setAllHistory((h) => [{
+      id: newSaved.id,
+      type: 'gesture',
+      text: newSaved.text,
+      timestamp: newSaved.timestamp,
+      confidence: newSaved.confidence,
+      isSaved: true,
+    }, ...h]);
     showToast('Saved to Recent Saves', 'success');
   };
 
   const unsaveGestureText = (id) => {
     setSavedGestures((s) => s.filter((it) => it.id !== id));
+    setAllHistory((h) => h.map((it) => (it.id === id ? { ...it, isSaved: false } : it)));
     showToast('Removed from saved', 'info');
   };
 
   const unsaveAllGestures = () => {
     if (savedGestures.length === 0) return;
     setSavedGestures([]);
+    const ids = new Set(savedGestures.map((it) => it.id));
+    setAllHistory((h) => h.map((it) => (ids.has(it.id) ? { ...it, isSaved: false } : it)));
     showToast('All saved gestures removed', 'info');
   };
 
@@ -447,7 +487,20 @@ const LipReadingApp = () => {
       isSaved: true,
     };
     setSavedTexts((prev) => [newSaved, ...prev]);
-    setAllHistory((h) => h.map((it) => (it.id === savedId || it.text === transcribedText ? { ...it, isSaved: true } : it)));
+    setAllHistory((h) => {
+      const exists = h.some((it) => it.id === savedId || it.text === transcribedText);
+      if (exists) {
+        return h.map((it) => (it.id === savedId || it.text === transcribedText ? { ...it, isSaved: true } : it));
+      }
+      return [{
+        id: savedId,
+        type: 'lip-reading',
+        text: transcribedText,
+        timestamp: newSaved.timestamp,
+        confidence: newSaved.confidence,
+        isSaved: true,
+      }, ...h];
+    });
     showToast('Saved to Recent Saves', 'success');
   };
 
@@ -549,9 +602,9 @@ const LipReadingApp = () => {
   };
 
   useEffect(() => {
-    if (currentPage === 'home') {
-      startCamera();
-    } else {
+    // Do NOT auto-start the camera when opening the page.
+    // Only perform teardown when navigating away from home.
+    if (currentPage !== 'home') {
       stopCamera();
       stopLive();
       stopHandGestureLive();
@@ -729,9 +782,9 @@ const LipReadingApp = () => {
         <div className="text-center mb-12">
           <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-4 animate-fade-in">
             {currentInterface === 'lip-reading' ? (
-              <>Lip Reading <span className="text-orange-400">Technology</span></>
+              <>Lip Detect <span className="text-orange-400"></span></>
             ) : (
-              <>Hand Gesture <span className="text-orange-400">Technology</span></>
+              <> Gesture Speech <span className="text-orange-400"></span></>
             )}
           </h1>
           <p className="text-base sm:text-lg md:text-xl text-gray-300 max-w-2xl mx-auto">
@@ -791,7 +844,7 @@ const LipReadingApp = () => {
                   <div className="relative overflow-hidden rounded-xl bg-gray-900">
                     {useServerVideo ? (
                       <img
-                        src="http://127.0.0.1:5000/video_feed"
+                        src="http://127.0.0.1:5000/video_feed_lip"
                         alt="Server camera feed"
                         className={`w-full object-cover transition-all duration-300 ${
                           isFullscreen ? 'h-[60vh] md:h-[32rem]' : 'h-56 sm:h-72 md:h-80'
