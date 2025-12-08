@@ -1,4 +1,0 @@
-Word: bolt
-Frames: 30
-Timestamp: 1757464175.0439909
-AvgQuality: 0.4105

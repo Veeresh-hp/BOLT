@@ -3,3 +3,5 @@ mediapipe
 pyfirmata
 scikit-learn
 pandas
+flask
+flask-cors
