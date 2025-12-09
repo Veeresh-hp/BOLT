@@ -3,16 +3,16 @@ import { ArrowRight, Camera, Hand, MessageSquare } from 'lucide-react';
 
 const Home = ({ onStartLipReading, onStartGestures }) => {
     return (
-        <div className="flex flex-col items-center justify-center flex-grow text-center py-12 sm:py-20 animate-in fade-in zoom-in duration-500">
+        <div className="flex flex-col items-center flex-grow text-center pt-2 sm:pt-4 pb-8 animate-in fade-in zoom-in duration-500">
 
             {/* Hero Section */}
-            <div className="max-w-4xl mx-auto space-y-8">
-                <div className="inline-flex items-center px-4 py-2 rounded-full border border-bolt-border bg-bolt-surface/50 backdrop-blur-sm mb-4">
+            <div className="max-w-4xl mx-auto space-y-4">
+                <div className="inline-flex items-center px-4 py-2 rounded-full border border-bolt-border bg-bolt-surface/50 backdrop-blur-sm">
                     <span className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse"></span>
                     <span className="text-sm font-medium text-gray-400">System Online</span>
                 </div>
 
-                <h1 className="font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-white via-gray-200 to-gray-500">
+                <h1 className="font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-white via-gray-200 to-gray-500 text-5xl sm:text-6xl">
                     Transforming Movement <br />
                     <span className="text-bolt-primary">Into Meaning</span>
                 </h1>
@@ -22,7 +22,7 @@ const Home = ({ onStartLipReading, onStartGestures }) => {
                 </p>
 
                 {/* Action Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-12 w-full max-w-3xl px-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 w-full max-w-3xl px-4">
 
                     {/* Lip Reading Card */}
                     <div
