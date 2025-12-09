@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Maximize, Minimize, Play, Square, Loader2, Hand, Save, Trash2 } from 'lucide-react';
+import { Camera, Maximize, Minimize, Play, Square, Loader2, Hand, Save, Trash2, Mic } from 'lucide-react';
 
 const HandGestureInterface = ({
     isLive,
@@ -10,7 +10,8 @@ const HandGestureInterface = ({
     onSaveGesture,
     onClearGesture,
     useServerVideo,
-    videoRef
+    videoRef,
+    onOpenLipReading
 }) => {
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isVideoLoaded, setIsVideoLoaded] = useState(false);
@@ -54,6 +55,14 @@ const HandGestureInterface = ({
                     <p className="text-sm text-bolt-text-secondary">Control and communicate with hand signs</p>
                 </div>
                 <div className="flex space-x-2">
+                    <button
+                        onClick={onOpenLipReading}
+                        className="flex items-center space-x-2 px-3 py-2 rounded-lg bg-bolt-surface hover:bg-bolt-surface/80 text-gray-400 hover:text-white transition-colors border border-bolt-border hover:border-bolt-primary/50"
+                        title="Open Lip Reading"
+                    >
+                        <Mic size={18} />
+                        <span className="text-sm font-medium hidden sm:inline">Lip Reading</span>
+                    </button>
                     <button
                         onClick={toggleFullscreen}
                         className="p-2 rounded-lg bg-bolt-surface hover:bg-bolt-surface/80 text-gray-400 hover:text-white transition-colors"

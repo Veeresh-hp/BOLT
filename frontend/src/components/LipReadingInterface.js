@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Maximize, Minimize, Play, Square, Volume2, VolumeX, Settings, Download, Trash2, Copy, Loader2, Mic, Pause, Save } from 'lucide-react';
+import { Camera, Maximize, Minimize, Play, Square, Volume2, VolumeX, Settings, Download, Trash2, Copy, Loader2, Mic, Pause, Save, Hand } from 'lucide-react';
 
 const LipReadingInterface = ({
     isLive,
@@ -11,7 +11,8 @@ const LipReadingInterface = ({
     onSaveText,
     onClearText,
     useServerVideo,
-    videoRef
+    videoRef,
+    onOpenGestures
 }) => {
     const [isPlaying, setIsPlaying] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -78,6 +79,14 @@ const LipReadingInterface = ({
                     <p className="text-sm text-bolt-text-secondary">AI-powered visual speech recognition</p>
                 </div>
                 <div className="flex space-x-2">
+                    <button
+                        onClick={onOpenGestures}
+                        className="flex items-center space-x-2 px-3 py-2 rounded-lg bg-bolt-surface hover:bg-bolt-surface/80 text-gray-400 hover:text-white transition-colors border border-bolt-border hover:border-bolt-primary/50"
+                        title="Open Gesture Control"
+                    >
+                        <Hand size={18} />
+                        <span className="text-sm font-medium hidden sm:inline">Gestures</span>
+                    </button>
                     <button
                         onClick={toggleFullscreen}
                         className="p-2 rounded-lg bg-bolt-surface hover:bg-bolt-surface/80 text-gray-400 hover:text-white transition-colors"

@@ -300,6 +300,7 @@ const AppContent = () => {
             onClearText={clearText}
             useServerVideo={useServerVideo}
             videoRef={videoRef}
+            onOpenGestures={() => navigate('/hand-gestures')}
           />
         } />
 
@@ -314,6 +315,7 @@ const AppContent = () => {
             onClearGesture={clearGesture}
             useServerVideo={useServerVideo}
             videoRef={videoRef}
+            onOpenLipReading={() => navigate('/lip-reading')}
           />
         } />
 

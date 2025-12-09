@@ -48,6 +48,8 @@ def run_lip_reading():
     try:
         base_dir = os.path.dirname(__file__)
         venv_python = os.path.join(base_dir, "LH", "Scripts", "python.exe")
+        if not os.path.exists(venv_python):
+             venv_python = os.path.join(base_dir, "LH2", "Scripts", "python.exe")
         # robust path resolution for predict_script
         candidate1 = os.path.join(base_dir, "Lip-Reading", "demo", "predict_live_backend.py")
         candidate2 = "/mnt/data/predict.py"  # uploaded/test file location
@@ -126,6 +128,8 @@ def run_hand_gestures():
     global latest_result
     base_dir = os.path.dirname(__file__)
     venv_python = os.path.join(base_dir, "LH", "Scripts", "python.exe")
+    if not os.path.exists(venv_python):
+         venv_python = os.path.join(base_dir, "LH2", "Scripts", "python.exe")
     main_script = os.path.join(base_dir, "hand_gestures", "main.py")
     output_file = os.path.join(base_dir, "hand_gestures", "output.txt")
     stop_file = os.path.join(base_dir, "hand_gestures", "stop.txt")
@@ -322,6 +326,34 @@ def get_latest_result():
 # --------------------- #
 camera = None
 
+
+# --------------------- #
+# Helper to open camera
+# --------------------- #
+def open_camera(device=0, retries=1, delay=0.5):
+    # Try DirectShow first, then default
+    backends = []
+    if hasattr(cv2, 'CAP_DSHOW'):
+        backends.append(cv2.CAP_DSHOW)
+    backends.append(None)
+    
+    for backend in backends:
+        try:
+            if backend is None:
+                cap = cv2.VideoCapture(device)
+            else:
+                cap = cv2.VideoCapture(device, backend)
+            
+            if cap.isOpened():
+                ret, frame = cap.read()
+                if ret and frame is not None:
+                    return cap
+                else:
+                    cap.release()
+        except Exception:
+            pass
+    return None
+
 def generate_frames():
     global camera
     base_dir = os.path.dirname(__file__)
@@ -380,11 +412,17 @@ def generate_frames():
             # 3. Fallback to Camera only if NO subprocess is active
             elif not lr_active and not hg_active:
                 if camera is None:
-                    camera = cv2.VideoCapture(0)
+                    camera = open_camera(0)
                 
-                if not camera.isOpened():
-                     # Try to re-open if closed
-                     camera = cv2.VideoCapture(0)
+                if camera is None or not camera.isOpened():
+                     # Try to re-open if closed OR if failed initially
+                     if camera is not None:
+                         camera.release()
+                     camera = open_camera(0)
+
+                if camera is None:
+                    time.sleep(0.5)
+                    continue
 
                 success, frame = camera.read()
                 if not success or frame is None:

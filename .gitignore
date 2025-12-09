@@ -6,6 +6,7 @@
 venv/
 **/venv_py310/
 **/venv/
+**/.venv310/
 **/model/*.h5
 **/model/*.dat
 **/collected_data/
