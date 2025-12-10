@@ -185,8 +185,13 @@ const AppContent = () => {
           const res = await fetch('http://127.0.0.1:5000/latest_result');
           const data = await res.json();
           if (data.type === 'hand-gesture' && data.text) {
-            setGestureText(data.text);
-            addToHistory(data.text, 'gesture');
+            // Parse gesture text (backend should already parse, but handle both formats as safety)
+            let gestureText = data.text;
+            if (gestureText.startsWith('Recognized Gesture:')) {
+              gestureText = gestureText.replace('Recognized Gesture:', '').trim();
+            }
+            setGestureText(gestureText);
+            addToHistory(gestureText, 'gesture');
           }
         } catch (e) { console.error('Polling error', e); }
       }, 1000);

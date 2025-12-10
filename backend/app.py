@@ -305,6 +305,10 @@ def get_latest_result():
     try:
         if os.path.exists(hg_out):
             text = read_output_file(hg_out)
+            # Parse "Recognized Gesture: X" format to extract just the gesture name
+            if text and text.startswith("Recognized Gesture:"):
+                gesture_name = text.replace("Recognized Gesture:", "").strip()
+                return jsonify({"type": "hand-gesture", "text": gesture_name or "No output"})
             return jsonify({"type": "hand-gesture", "text": text or "No output"})
     except Exception as e:
         print('[WARN] Error reading hand gesture output:', e)

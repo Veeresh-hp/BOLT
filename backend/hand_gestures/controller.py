@@ -105,4 +105,3 @@ def cleanup() -> None:
 
 # Ensure cleanup on interpreter exit
 atexit.register(cleanup)
-    

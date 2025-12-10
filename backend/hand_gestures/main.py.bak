@@ -395,20 +395,38 @@ try:
                         pass
 
             # atomic frame write
-            try:
-                tmp = FRAME_FILE + ".tmp"
+            # atomic frame write with retry
+            max_retries = 5
+            for attempt in range(max_retries):
                 try:
-                    from PIL import Image
-                    im = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-                    im.save(tmp, format="JPEG", quality=85)
-                except Exception:
-                    cv2.imwrite(tmp, image)
-                try:
-                    os.replace(tmp, FRAME_FILE)
-                except Exception:
-                    os.rename(tmp, FRAME_FILE)
-            except Exception as e:
-                print("[WARN] frame write failed:", e)
+                    tmp = FRAME_FILE + ".tmp"
+                    # Write to temp
+                    try:
+                        from PIL import Image
+                        im = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+                        im.save(tmp, format="JPEG", quality=85)
+                    except Exception:
+                        cv2.imwrite(tmp, image)
+                    
+                    # Rename atomic-ish
+                    if os.path.exists(FRAME_FILE):
+                        try:
+                            os.remove(FRAME_FILE)
+                        except Exception:
+                            pass # might be locked, try rename anyway or overwrite
+                            
+                    try:
+                        os.replace(tmp, FRAME_FILE)
+                    except Exception:
+                        shutil.move(tmp, FRAME_FILE)
+                        
+                    break # success
+                except Exception as e:
+                    # Windows file locking often transient
+                    if attempt < max_retries - 1:
+                        time.sleep(0.01)
+                    else:
+                        print(f"[WARN] frame write failed after {max_retries} attempts: {e}")
 
 finally:
     try:
