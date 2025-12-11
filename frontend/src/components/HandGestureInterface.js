@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Maximize, Minimize, Play, Square, Loader2, Hand, Save, Trash2, Mic } from 'lucide-react';
+import { Camera, Maximize, Minimize, Play, Square, Loader2, Hand, Save, Trash2, Mic, Volume2, Pause, Settings } from 'lucide-react';
 
 const HandGestureInterface = ({
     isLive,
@@ -16,6 +16,28 @@ const HandGestureInterface = ({
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isVideoLoaded, setIsVideoLoaded] = useState(false);
     const [videoUrl, setVideoUrl] = useState("http://127.0.0.1:5000/video_feed");
+
+    // TTS State
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [speechRate, setSpeechRate] = useState(1);
+    const [speechVolume, setSpeechVolume] = useState(1);
+    const [showSettings, setShowSettings] = useState(false);
+
+    const speakText = () => {
+        if (!gestureText) return;
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(gestureText);
+        utter.rate = speechRate;
+        utter.volume = speechVolume;
+        utter.onstart = () => setIsPlaying(true);
+        utter.onend = () => setIsPlaying(false);
+        window.speechSynthesis.speak(utter);
+    };
+
+    const stopSpeech = () => {
+        window.speechSynthesis.cancel();
+        setIsPlaying(false);
+    };
 
     useEffect(() => {
         setIsVideoLoaded(false);
@@ -169,7 +191,50 @@ const HandGestureInterface = ({
                         </div>
 
                         {gestureText && (
-                            <div className="flex justify-center space-x-4 pt-8">
+                            <div className="flex justify-center items-center space-x-4 pt-8">
+                                <div className="flex items-center space-x-2 bg-bolt-surface/50 rounded-full p-1 border border-bolt-border">
+                                    <button
+                                        onClick={isPlaying ? stopSpeech : speakText}
+                                        disabled={!gestureText}
+                                        className="p-2 rounded-full hover:bg-white/10 text-gray-300 disabled:opacity-30 transition-colors tooltip relative"
+                                        title="Text to Speech"
+                                    >
+                                        {isPlaying ? <Pause size={20} /> : <Volume2 size={20} />}
+                                    </button>
+                                    <div className="relative">
+                                        <button
+                                            onClick={() => setShowSettings(!showSettings)}
+                                            className={`p-2 rounded-full hover:bg-white/10 text-gray-300 transition-colors ${showSettings ? 'bg-white/10 text-white' : ''}`}
+                                        >
+                                            <Settings size={18} />
+                                        </button>
+                                        {showSettings && (
+                                            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-48 bg-bolt-surface border border-bolt-border rounded-xl p-4 shadow-xl z-30">
+                                                <div className="space-y-4">
+                                                    <div>
+                                                        <label className="text-xs text-gray-400 block mb-1">Speed: {speechRate}x</label>
+                                                        <input
+                                                            type="range" min="0.5" max="2" step="0.1"
+                                                            value={speechRate}
+                                                            onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
+                                                            className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs text-gray-400 block mb-1">Volume</label>
+                                                        <input
+                                                            type="range" min="0" max="1" step="0.1"
+                                                            value={speechVolume}
+                                                            onChange={(e) => setSpeechVolume(parseFloat(e.target.value))}
+                                                            className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
                                 <button
                                     onClick={onSaveGesture}
                                     className="p-3 rounded-full bg-bolt-surface hover:bg-bolt-surface/80 border border-bolt-border text-green-500 transition-colors tooltip"

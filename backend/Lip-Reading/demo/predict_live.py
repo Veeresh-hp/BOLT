@@ -15,6 +15,13 @@ sys.path.append('../data_collection')
 from constants import *
 from constants import TOTAL_FRAMES, VALID_WORD_THRESHOLD, NOT_TALKING_THRESHOLD, PAST_BUFFER_SIZE, LIP_WIDTH, LIP_HEIGHT
 
+# Backend Integration Paths
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_FILE = os.path.join(BASE_DIR, "..", "output.txt")
+STOP_FILE = os.path.join(BASE_DIR, "..", "stop.txt")
+FRAME_FILE = os.path.join(BASE_DIR, "..", "frame.jpg")
+
+
 
 label_dict = {6: 'hello', 5: 'dog', 10: 'my', 12: 'you', 9: 'lips', 3: 'cat', 11: 'read', 0: 'a', 4: 'demo', 7: 'here', 8: 'is', 1: 'bye', 2: 'can'}
 count = 0
@@ -64,7 +71,31 @@ detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor("../model/face_weights.dat")
 
 # read the image
-cap = cv2.VideoCapture(0)
+# Robust camera opener function
+def open_camera_robust(device=0):
+    target_indices = [0, 1, 2]
+    backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
+    
+    for index in target_indices:
+        for backend in backends:
+            try:
+                cap = cv2.VideoCapture(index, backend)
+                if cap.isOpened():
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                    
+                    ret, frame = cap.read()
+                    if ret and frame is not None:
+                        print(f"Camera opened on index {index} with backend: {backend}")
+                        return cap
+                    cap.release()
+            except: pass
+    return None
+
+cap = open_camera_robust(0)
+if cap is None:
+    print("CRITICAL: Failed to open camera in predict_live.py")
+    exit(1)
 #cap.set(cv2.CAP_PROP_FPS, 60)
 curr_word_frames = []
 not_talking_counter = 0
@@ -84,6 +115,9 @@ draw_prediction = False
 spoken_already = []
 
 while True:
+    if os.path.exists(STOP_FILE):
+        print("Stop file found, exiting...")
+        break
     _, frame = cap.read()
     # Convert image into grayscale
     gray = cv2.cvtColor(src=frame, code=cv2.COLOR_BGR2GRAY)
@@ -195,6 +229,13 @@ while True:
                 spoken_already.append(predicted_word_label)
 
                 print("FINISHED!", predicted_word_label)
+                # Write result to output file for backend
+                try:
+                    with open(OUTPUT_FILE, "w") as f:
+                        f.write(predicted_word_label)
+                except Exception as e:
+                    print(f"Error writing output: {e}")
+
                 draw_prediction = True
                 count = 0
 
@@ -215,6 +256,13 @@ while True:
         cv2.putText(frame, predicted_word_label, (50 ,100), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 0), 2)
 
     cv2.imshow(winname="Mouth", mat=frame)
+    
+    # Write frame to file for backend streaming
+    try:
+        cv2.imwrite(FRAME_FILE, frame)
+    except Exception as e:
+        pass
+
 
     key = cv2.waitKey(1)
     if key == ord('q'):

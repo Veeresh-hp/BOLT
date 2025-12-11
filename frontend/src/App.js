@@ -32,8 +32,20 @@ const AppContent = () => {
   const [gestureConfidence, setGestureConfidence] = useState(0);
 
   // --- History State ---
-  const [allHistory, setAllHistory] = useState([]);
+  const [allHistory, setAllHistory] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bolt_history');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+
+  // Persist history
+  useEffect(() => {
+    localStorage.setItem('bolt_history', JSON.stringify(allHistory));
+  }, [allHistory]);
 
   // --- Refs ---
   const videoRef = useRef(null); // Local video ref
@@ -41,20 +53,26 @@ const AppContent = () => {
   const processingIntervalRef = useRef(null);
 
   // --- Toasts (Simplified) ---
-  const showToast = (msg, type = 'info') => {
-    // In a real app we'd use a toast library or custom component
-    console.log(`[TOAST ${type}]: ${msg}`);
+  // --- Toasts ---
+  const [toast, setToast] = useState(null);
+
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), TOAST_DURATION);
   };
 
   // --- Helpers ---
-  const addToHistory = (text, type) => {
+  // --- Helpers ---
+  const addToHistory = (text, type, isSaved = false) => {
     setAllHistory(prev => {
       // Prevent duplicates at the top of the stack
-      if (prev.length > 0 && prev[0].text === text && prev[0].type === type) return prev;
+      // Only if same text, type, AND save status
+      if (prev.length > 0 && prev[0].text === text && prev[0].type === type && prev[0].isSaved === isSaved) return prev;
       return [{
         id: Date.now(),
         text,
         type,
+        isSaved,
         timestamp: new Date().toLocaleTimeString()
       }, ...prev];
     });
@@ -72,6 +90,33 @@ const AppContent = () => {
     a.click();
     document.body.removeChild(a);
   };
+
+  // --- Camera Management & Lip Reading Logic ---
+  // ... (re-implementing polling to use isSaved=false)
+
+  // NOTE: This tool requires contiguous blocks. I need to be careful.
+  // The polling logic is scattered. I will just update the helpers first.
+  // Then I will update the Polling logic in subsequent calls.
+
+  // Let's stick to updating `addToHistory` definition first.
+
+  // NOTE 2: I'll also update the save handlers here if they are in the range. 
+  // Wait, I can't update saveText/saveGesture here because they are far below.
+  // I will just update addToHistory definition here.
+
+  // ... (Camera Management & Lip Reading Logic omitted for brevity, logic remains same) ...
+
+  // To update the Save Handlers down below:
+  // We need to jump to the handlers section.
+  // ...
+
+  // NOTE: I will return the Full content for the lines I'm replacing to be safe,
+  // but the tool requires contiguous block. 
+  // I am replacing from "History State" declaration down to the end of "saveGesture".
+  // This is too large. I should split this.
+
+  // Handlers replacement:
+
 
   // --- Camera Management ---
   const startCamera = async () => {
@@ -191,7 +236,7 @@ const AppContent = () => {
               gestureText = gestureText.replace('Recognized Gesture:', '').trim();
             }
             setGestureText(gestureText);
-            addToHistory(gestureText, 'gesture');
+            addToHistory(gestureText, 'gesture', false);
           }
         } catch (e) { console.error('Polling error', e); }
       }, 1000);
@@ -274,9 +319,20 @@ const AppContent = () => {
   };
 
   // --- Helpers ---
-  const saveText = () => showToast('Saved text');
+  const saveText = () => {
+    if (transcribedText) {
+      addToHistory(transcribedText, 'lip-reading', true);
+      showToast('Saved text');
+    }
+  };
   const clearText = () => setTranscribedText('');
-  const saveGesture = () => showToast('Saved gesture');
+
+  const saveGesture = () => {
+    if (gestureText) {
+      addToHistory(gestureText, 'gesture', true);
+      showToast('Saved gesture');
+    }
+  };
   const clearGesture = () => setGestureText('');
 
   return (
@@ -339,6 +395,18 @@ const AppContent = () => {
         onDownload={downloadHistoryItem}
         onClearAll={clearHistory}
       />
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-5">
+          <div className={`px-6 py-3 rounded-xl shadow-2xl border flex items-center space-x-3 ${toast.type === 'error'
+            ? 'bg-red-500/10 border-red-500/50 text-red-500 backdrop-blur-md'
+            : 'bg-green-500/10 border-green-500/50 text-green-500 backdrop-blur-md'
+            }`}>
+            <span className="text-sm font-semibold">{toast.msg}</span>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 };

@@ -47,11 +47,13 @@ def run_lip_reading():
     print("Entered run_lip_reading", file=sys.stderr)
     try:
         base_dir = os.path.dirname(__file__)
-        venv_python = os.path.join(base_dir, "LH", "Scripts", "python.exe")
+        venv_python = os.path.join(base_dir, "venv", "Scripts", "python.exe")
+        if not os.path.exists(venv_python):
+             venv_python = os.path.join(base_dir, "LH", "Scripts", "python.exe")
         if not os.path.exists(venv_python):
              venv_python = os.path.join(base_dir, "LH2", "Scripts", "python.exe")
         # robust path resolution for predict_script
-        candidate1 = os.path.join(base_dir, "Lip-Reading", "demo", "predict_live_backend.py")
+        candidate1 = os.path.join(base_dir, "Lip-Reading", "demo", "predict_live.py")
         candidate2 = "/mnt/data/predict.py"  # uploaded/test file location
         if os.path.exists(candidate1):
             predict_script = candidate1
@@ -127,7 +129,9 @@ def run_lip_reading():
 def run_hand_gestures():
     global latest_result
     base_dir = os.path.dirname(__file__)
-    venv_python = os.path.join(base_dir, "LH", "Scripts", "python.exe")
+    venv_python = os.path.join(base_dir, "venv", "Scripts", "python.exe")
+    if not os.path.exists(venv_python):
+        venv_python = os.path.join(base_dir, "LH", "Scripts", "python.exe")
     if not os.path.exists(venv_python):
          venv_python = os.path.join(base_dir, "LH2", "Scripts", "python.exe")
     main_script = os.path.join(base_dir, "hand_gestures", "main.py")
@@ -202,15 +206,23 @@ def home():
 def start_lip_reading():
     print(f"Received /start_lip_reading request. CWD: {os.getcwd()}", file=sys.stderr)
     
-    # 1. Mark as STARTING to block generate_frames from grabbing camera
+    # 1. Stop Hand Gestures if running (Critical for camera release)
+    if 'hand_gestures_proc' in _threads:
+        print("[INFO] Stopping active hand_gestures_proc before starting lip reading...")
+        stop_hand_gestures()
+        time.sleep(1.5) # Give it time to release camera
+
+    # 2. Mark as STARTING
     _threads["lip_reading_proc"] = "STARTING"
 
-    # 2. Cleanup OTHER mode's output to prevent stale reads
+    # 3. Cleanup output
     base_dir = os.path.dirname(__file__)
     other_output = os.path.join(base_dir, "hand_gestures", "output.txt")
     ensure_removed(other_output)
+    output_file = os.path.join(base_dir, "Lip-Reading", "output.txt")
+    ensure_removed(output_file)
 
-    # Release global camera if it's being used by the main thread
+    # 4. Release global camera if held
     global camera
     if camera is not None:
         if camera.isOpened():
@@ -219,11 +231,9 @@ def start_lip_reading():
         print("[INFO] Released global camera for Lip Reading", file=sys.stderr)
         time.sleep(1.0)
 
-    # t = threading.Thread(target=run_lip_reading, daemon=True)
-    # t.start()
-    # _threads["lip_reading"] = t
-    run_lip_reading()
-    print("Called run_lip_reading synchronously", file=sys.stderr)
+    # 5. Start Lip Reading
+    t = threading.Thread(target=run_lip_reading, daemon=True)
+    t.start()
     return jsonify({"status": "Lip Reading started"})
 
 
@@ -235,6 +245,18 @@ def stop_lip_reading():
         os.makedirs(os.path.dirname(stop_file), exist_ok=True)
         with open(stop_file, "w") as f:
             f.write("stop")
+        
+        # Terminate process
+        proc = _threads.get('lip_reading_proc')
+        if proc and proc != "STARTING":
+            try:
+                proc.terminate()
+                proc.wait(timeout=2)
+            except:
+                try: proc.kill()
+                except: pass
+            _threads.pop('lip_reading_proc', None)
+            
         return jsonify({"status": "stop signal written for lip reading"})
     except Exception as e:
         return jsonify({"status": "failed", "error": str(e)}), 500
@@ -242,27 +264,34 @@ def stop_lip_reading():
 
 @app.route("/start_hand_gestures", methods=["GET"])
 def start_hand_gestures():
-    # 1. Mark as STARTING
+    # 1. Stop Lip Reading if running
+    if 'lip_reading_proc' in _threads:
+        print("[INFO] Stopping active lip_reading_proc before starting hand gestures...")
+        stop_lip_reading()
+        time.sleep(1.5)
+
+    # 2. Mark as STARTING
     _threads["hand_gestures_proc"] = "STARTING"
 
-    # 2. Cleanup OTHER mode's output
+    # 3. Cleanup output
     base_dir = os.path.dirname(__file__)
     other_output = os.path.join(base_dir, "Lip-Reading", "output.txt")
     ensure_removed(other_output)
+    output_file = os.path.join(base_dir, "hand_gestures", "output.txt")
+    ensure_removed(output_file)
 
-    # Release global camera if it's being used by the main thread
+    # 4. Release global camera
     global camera
     if camera is not None:
         if camera.isOpened():
             camera.release()
         camera = None
         print("[INFO] Released global camera for Hand Gestures", file=sys.stderr)
-        # Give hardware time to release
         time.sleep(1.0)
 
+    # 5. Start Hand Gestures
     t = threading.Thread(target=run_hand_gestures, daemon=True)
     t.start()
-    _threads["hand_gestures"] = t
     return jsonify({"status": "Hand Gesture recognition started"})
 
 
@@ -334,28 +363,40 @@ camera = None
 # --------------------- #
 # Helper to open camera
 # --------------------- #
-def open_camera(device=0, retries=1, delay=0.5):
-    # Try DirectShow first, then default
-    backends = []
-    if hasattr(cv2, 'CAP_DSHOW'):
-        backends.append(cv2.CAP_DSHOW)
-    backends.append(None)
+def open_camera(device=0, retries=3, delay=0.5):
+    """
+    Robust camera opener.
+    Iterates indices 0..2.
+    Tries DSHOW, MSMF, ANY.
+    Sets resolution to 640x480 to minimize bandwidth issues.
+    """
+    # If device is 0, we'll try 0, 1, 2. If it's specific, we just try that.
+    target_indices = [device] if device != 0 else [0, 1, 2]
+    backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
     
-    for backend in backends:
-        try:
-            if backend is None:
-                cap = cv2.VideoCapture(device)
-            else:
-                cap = cv2.VideoCapture(device, backend)
-            
-            if cap.isOpened():
-                ret, frame = cap.read()
-                if ret and frame is not None:
-                    return cap
-                else:
-                    cap.release()
-        except Exception:
-            pass
+    for index in target_indices:
+        for attempt in range(retries):
+            for backend in backends:
+                try:
+                    cap = cv2.VideoCapture(index, backend)
+                    if cap.isOpened():
+                        # Optimize for compatibility
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                        
+                        # Warmup read
+                        ret, frame = cap.read()
+                        if ret and frame is not None:
+                            print(f"[INFO] Camera opened on index {index} with backend {backend}")
+                            return cap
+                        else:
+                            cap.release()
+                except Exception as e:
+                    # print(f"[WARN] Camera open failed on index {index}: {e}")
+                    pass
+            time.sleep(delay)
+    
+    print("[ERROR] Failed to open camera on any index/backend.")
     return None
 
 def generate_frames():

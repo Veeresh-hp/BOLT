@@ -35,28 +35,30 @@ mp_hand = mp.solutions.hands
 
 tipIds = [4, 8, 12, 16, 20]
 
-def open_camera(device=0, retries=10, delay=0.8):
-    """Try to open the camera with retries. Returns a VideoCapture object or None."""
-    # Try a couple of backends: prefer CAP_DSHOW on Windows, then fallback to default
-    for attempt in range(1, retries + 1):
-        for backend in (getattr(cv2, 'CAP_DSHOW', None), None):
-            try:
-                if backend is None:
-                    cap = cv2.VideoCapture(device)
-                else:
-                    cap = cv2.VideoCapture(device, backend)
-                opened = cap.isOpened()
-                print(f"[INFO] Camera attempt {attempt}/{retries} backend={backend} opened={opened}")
-                if opened:
-                    return cap
+def open_camera(device=0, retries=5, delay=0.5):
+    """Robust camera opener."""
+    target_indices = [0, 1, 2]
+    backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
+    
+    for index in target_indices:
+        for attempt in range(1, retries + 1):
+            for backend in backends:
                 try:
-                    cap.release()
-                except Exception:
+                    cap = cv2.VideoCapture(index, backend)
+                    if cap.isOpened():
+                        # Set resolution to 640x480
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                        
+                        ret, frame = cap.read()
+                        if ret and frame is not None:
+                            print(f"[INFO] Camera opened at index {index} (Backend {backend})")
+                            return cap
+                        cap.release()
+                except Exception as e:
                     pass
-            except Exception as e:
-                print(f"[WARN] Camera open backend={backend} failed: {e}")
-        time.sleep(delay)
-    print("[ERROR] Unable to open camera after retries")
+            time.sleep(delay)
+    print("[ERROR] Unable to open camera on any index.")
     return None
 
 video = open_camera(0)
@@ -135,8 +137,15 @@ def classify_gesture(lmList, model):
 
 model = None
 if not TRAINING_MODE and os.path.exists(MODEL_FILE):
-    model = joblib.load(MODEL_FILE)
-    print("[INFO] Loaded trained model for classification.")
+    try:
+        model = joblib.load(MODEL_FILE)
+        print("[INFO] Loaded trained model for classification.")
+    except Exception as e:
+        print(f"[WARN] Failed to load model: {e}. Attempting to retrain...")
+        if train_model():
+            model = joblib.load(MODEL_FILE)
+        else:
+            print("[ERROR] Could not train model. Hand gestures will not work.")
 
 try:
     with mp_hand.Hands(min_detection_confidence=0.5,
